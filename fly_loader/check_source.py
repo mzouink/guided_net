@@ -35,8 +35,8 @@ low_sampling = (16, 16, 16)
 import gunpowder as gp
 import numpy as np
 
-from fly_organelles.guided_data import GuidedCellMapCropSource, AverageUpSample
 
+from .guided_data import GuidedCellMapCropSource, AverageUpSample
 
 
 def make_data_pipeline(
