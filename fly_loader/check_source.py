@@ -6,7 +6,7 @@ import fibsem_tools as fst
 import gunpowder as gp
 import numpy as np
 import xarray as xr
-from skimage.transform import pyramid_expand
+from scipy.ndimage import zoom
 from fly_organelles.guided_data import spatial_spec_from_xarray
 from fly_organelles.utils import (
     corner_offset,
@@ -101,6 +101,13 @@ class GuidedCellMapCropSource(gp.batch_provider.BatchProvider):
 
         self.padding += gp.Coordinate(max(0, p) for p in self.max_request - (cropsize + self.padding * 2)) / 2.0
         self.specs[raw_arraykey] = raw_spec
+        for k, v in self.specs.items():
+            
+
+            v.roi = v.roi/gp.Coordinate(v.voxel_size)
+            v.voxel_size = gp.Coordinate((1,)*len(v.voxel_size))
+
+
         self.low_labelkey = low_labelkey
         self.low_sampling = gp.Coordinate(low_sampling)
 
@@ -128,15 +135,15 @@ class GuidedCellMapCropSource(gp.batch_provider.BatchProvider):
             else:
                 dataset_roi = rs.roi
             if ak == self.low_labelkey:
-                vs = self.low_res_specs.voxel_size
+                # vs = self.low_res_specs.voxel_size
                 dataset_roi = rs.roi
-                dataset_roi = dataset_roi / vs
+                dataset_roi = (dataset_roi / vs) / gp.Coordinate((self.upsample_factor,)*len(vs))
                 dataset_roi = dataset_roi - self.low_res_specs.roi.offset / vs
                 arr = np.asarray(self.stores[ak][dataset_roi.to_slices()])
-                # arr = pyramid_expand(arr, self.factor).astype(arr.dtype)
+                arr = zoom(arr, self.factor, mode='nearest', order=0)
             else:
                 dataset_roi = dataset_roi / vs
-                dataset_roi = dataset_roi - self.spec[ak].roi.offset / vs
+                dataset_roi = dataset_roi - self.specs[ak].roi.offset / vs
                 logger.debug(f"Reading {ak} with dataset_roi {dataset_roi} ({dataset_roi.to_slices()})")
                 # loc = {axis:slice(b, e, None) for b, e, axis in zip(rs.roi.get_begin(), rs.roi.get_end()-vs/2., "zyx")}
                 # arr = self.stores[ak].sel(loc).to_numpy()
@@ -231,10 +238,13 @@ def make_data_pipeline(
     return src_pipe
 
 #%%
-input_size = gp.Coordinate((56, 56, 56))
-output_size = gp.Coordinate((28, 28, 28))
-input_size = gp.Coordinate(input_size) * gp.Coordinate(high_sampling)
-output_size = gp.Coordinate(output_size) * gp.Coordinate(low_sampling)
+input_size = gp.Coordinate((100, 100, 100))
+output_size = gp.Coordinate((100, 100, 100))
+# * gp.Coordinate((2, 2, 2))
+input_size = gp.Coordinate(input_size)
+# * gp.Coordinate(high_sampling)
+output_size = gp.Coordinate(output_size) 
+# * gp.Coordinate(low_sampling)
 pad_width_out = output_size / 2.0
 displacement_sigma = gp.Coordinate((24, 24, 24))
 # max_in_request = gp.Coordinate((np.ceil(np.sqrt(sum(input_size**2))),)*len(input_size)) + displacement_sigma * 6
@@ -254,9 +264,9 @@ pipeline = make_data_pipeline(
 
 request = gp.BatchRequest()
 
-request.add(low_label_key, output_size, voxel_size=gp.Coordinate(32,32,32))
-request.add(raw_key, input_size, voxel_size=gp.Coordinate(16,16,16))
-request.add(high_label_key, input_size, voxel_size=gp.Coordinate(16,16,16))
+request.add(low_label_key, output_size, voxel_size=gp.Coordinate(1,1,1))
+request.add(raw_key, input_size, voxel_size=gp.Coordinate(1,1,1))
+request.add(high_label_key, input_size, voxel_size=gp.Coordinate(1,1,1))
 #%%
 result = []
 with gp.build(pipeline) as pp:
@@ -279,5 +289,16 @@ view_in_neuroglancer(
     raw=batch[raw_key].data,
     label_high=batch[high_label_key].data,
     label_low=batch[low_label_key].data,
+    # expended_high= new_array,
 )
+# %%
+batch[high_label_key].data
+#%%
+array = batch[high_label_key].data
+from scipy.ndimage import zoom
+
+# %%
+array.shape
+# %%
+new_array.shape
 # %%
